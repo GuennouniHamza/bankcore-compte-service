@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import ma.bankcore.compte_service.entity.Compte;
 
 public interface CompteRepository extends JpaRepository<Compte,Long> {
-	List<Compte> findByClientId(Long clientId);
+	List<Compte> findByClientId(Long clientId);//spring data genere autom apartir du nom de la méthode
 
     Optional<Compte> findByRib(String rib);
 

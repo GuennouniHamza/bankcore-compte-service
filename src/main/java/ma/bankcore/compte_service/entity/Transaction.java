@@ -46,5 +46,54 @@ public class Transaction {
         this.dateOperation = LocalDateTime.now();
     }
 
+	public Long getId() {
+		return id;
+	}
+
+	public void setId(Long id) {
+		this.id = id;
+	}
+
+	public BigDecimal getMontant() {
+		return montant;
+	}
+
+	public void setMontant(BigDecimal montant) {
+		this.montant = montant;
+	}
+
+	public TypeOperation getTypeOperation() {
+		return typeOperation;
+	}
+
+	public void setTypeOperation(TypeOperation typeOperation) {
+		this.typeOperation = typeOperation;
+	}
+
+	public String getDescription() {
+		return description;
+	}
+
+	public void setDescription(String description) {
+		this.description = description;
+	}
+
+	public LocalDateTime getDateOperation() {
+		return dateOperation;
+	}
+
+	public void setDateOperation(LocalDateTime dateOperation) {
+		this.dateOperation = dateOperation;
+	}
+
+	public Compte getCompte() {
+		return compte;
+	}
+
+	public void setCompte(Compte compte) {
+		this.compte = compte;
+	}
+    
+
 
 }
