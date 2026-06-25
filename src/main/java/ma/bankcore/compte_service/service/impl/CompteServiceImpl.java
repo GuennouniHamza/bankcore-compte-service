@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import ma.bankcore.compte_service.dto.CompteRequest;
 import ma.bankcore.compte_service.dto.CompteResponse;
+import ma.bankcore.compte_service.dto.NotificationRequest;
 import ma.bankcore.compte_service.dto.VirementRequest;
 import ma.bankcore.compte_service.entity.Compte;
 import ma.bankcore.compte_service.entity.StatutCompte;
@@ -17,81 +18,80 @@ import ma.bankcore.compte_service.exception.CompteBloqueException;
 import ma.bankcore.compte_service.exception.CompteNotFoundException;
 import ma.bankcore.compte_service.exception.SoldeInsuffisantException;
 import ma.bankcore.compte_service.feign.ClientFeignClient;
+import ma.bankcore.compte_service.feign.NotificationFeignClient;
 import ma.bankcore.compte_service.mapper.CompteMapper;
 import ma.bankcore.compte_service.repository.CompteRepository;
 import ma.bankcore.compte_service.service.CompteService;
 
 public class CompteServiceImpl implements CompteService {
 	private final CompteRepository compteRepository;
-    private final CompteMapper compteMapper;
-    private final ClientFeignClient clientFeignClient;
-    
-    public CompteServiceImpl(CompteRepository compteRepository,
-            CompteMapper compteMapper,
-            ClientFeignClient clientFeignClient) {
-this.compteRepository = compteRepository;
-this.compteMapper = compteMapper;
-this.clientFeignClient = clientFeignClient;
-}
+	private final CompteMapper compteMapper;
+	private final ClientFeignClient clientFeignClient;
+	private final NotificationFeignClient notificationFeignClient;
+
+	public CompteServiceImpl(CompteRepository compteRepository, CompteMapper compteMapper,
+			ClientFeignClient clientFeignClient, NotificationFeignClient notificationFeignClient) {
+		this.compteRepository = compteRepository;
+		this.compteMapper = compteMapper;
+		this.clientFeignClient = clientFeignClient;
+		this.notificationFeignClient = notificationFeignClient;
+	}
 
 	@Override
 	@Transactional
 	public CompteResponse ouvrirCompte(CompteRequest request) {
-		
-	    clientFeignClient.getClientById(request.getClientId());
-	    Compte compte = compteMapper.toEntity(request);
-	    Compte saved = compteRepository.save(compte);
+
+		clientFeignClient.getClientById(request.getClientId());
+		Compte compte = compteMapper.toEntity(request);
+		Compte saved = compteRepository.save(compte);
 		return compteMapper.toResponse(saved);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public CompteResponse getCompteById(Long id) {
-		Compte compte= compteRepository.findById(id)
-			.orElseThrow(()->new CompteNotFoundException(id));
+		Compte compte = compteRepository.findById(id).orElseThrow(() -> new CompteNotFoundException(id));
 		return compteMapper.toResponse(compte);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public List<CompteResponse> getComptesByClientId(Long clientId) {
-		return compteRepository.findByClientId(clientId)
-				.stream()
-				.map(compteMapper::toResponse)
+		return compteRepository.findByClientId(clientId).stream().map(compteMapper::toResponse)
 				.collect(Collectors.toList());
 	}
 
 	@Override
 	@Transactional
 	public CompteResponse effectuerVirement(VirementRequest request) {
-		
-		if (request.getMontant().compareTo(BigDecimal.ZERO)<=0) {
+
+		if (request.getMontant().compareTo(BigDecimal.ZERO) <= 0) {
 			throw new IllegalArgumentException("Montant doit être positif");
 		}
-		Compte source=compteRepository.findById(request.getCompteSourceId())
-			.orElseThrow(()->new CompteNotFoundException(request.getCompteSourceId()));
-		
-		Compte dest=compteRepository.findById(request.getCompteDestId())
-			.orElseThrow(()->new CompteNotFoundException(request.getCompteDestId()));
-		if(source.getStatut()!=StatutCompte.ACTIF) {
+		Compte source = compteRepository.findById(request.getCompteSourceId())
+				.orElseThrow(() -> new CompteNotFoundException(request.getCompteSourceId()));
+
+		Compte dest = compteRepository.findById(request.getCompteDestId())
+				.orElseThrow(() -> new CompteNotFoundException(request.getCompteDestId()));
+		if (source.getStatut() != StatutCompte.ACTIF) {
 			throw new CompteBloqueException(source.getId());
 		}
 		if (dest.getStatut() != StatutCompte.ACTIF) {
-		    throw new CompteBloqueException(dest.getId());
+			throw new CompteBloqueException(dest.getId());
 		}
-		if (source.getSolde().compareTo(request.getMontant())<0) {
-			throw new SoldeInsuffisantException(source.getSolde(),request.getMontant());
+		if (source.getSolde().compareTo(request.getMontant()) < 0) {
+			throw new SoldeInsuffisantException(source.getSolde(), request.getMontant());
 		}
 		source.setSolde(source.getSolde().subtract(request.getMontant()));
 		dest.setSolde(dest.getSolde().add(request.getMontant()));
-		
+
 		Transaction txSource = new Transaction();
 		txSource.setMontant(request.getMontant());
 		txSource.setTypeOperation(TypeOperation.DEBIT);
 		txSource.setDescription("Virement vers " + dest.getRib());
 		txSource.setCompte(source);
 		source.getTransactions().add(txSource);
-		
+
 		Transaction txDest = new Transaction();
 		txDest.setMontant(request.getMontant());
 		txDest.setTypeOperation(TypeOperation.CREDIT);
@@ -99,25 +99,34 @@ this.clientFeignClient = clientFeignClient;
 		txDest.setCompte(dest);
 		dest.getTransactions().add(txDest);
 		
-		return  compteMapper.toResponse(source);
-	}
+		try {
+			notificationFeignClient.envoyerNotification(
+				new NotificationRequest(
+					source.getRib() + "@bankcore.ma",
+					"Virement effectué",
+					"Virement de " + request.getMontant() +
+                    " MAD vers " + dest.getRib() + " effectué avec succès.")	
+					);
+		}catch(Exception e){
+			// On ne bloque pas le virement si notification échoue
+		}
 
+		return compteMapper.toResponse(source);
+	}
+	
 	@Override
 	@Transactional
 	public void bloquerCompte(Long id) {
-		Compte compte = compteRepository.findById(id)
-		        .orElseThrow(() -> new CompteNotFoundException(id));
-		    compte.setStatut(StatutCompte.BLOQUE);
+		Compte compte = compteRepository.findById(id).orElseThrow(() -> new CompteNotFoundException(id));
+		compte.setStatut(StatutCompte.BLOQUE);
 	}
 
 	@Override
 	@Transactional
 	public void cloturerCompte(Long id) {
-		Compte compte = compteRepository.findById(id)
-		        .orElseThrow(() -> new CompteNotFoundException(id));
-		    compte.setStatut(StatutCompte.CLOTURE);
-		
+		Compte compte = compteRepository.findById(id).orElseThrow(() -> new CompteNotFoundException(id));
+		compte.setStatut(StatutCompte.CLOTURE);
+
 	}
-    
 
 }
