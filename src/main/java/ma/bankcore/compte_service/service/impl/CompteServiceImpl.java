@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import ma.bankcore.compte_service.dto.CompteRequest;
@@ -23,6 +24,7 @@ import ma.bankcore.compte_service.mapper.CompteMapper;
 import ma.bankcore.compte_service.repository.CompteRepository;
 import ma.bankcore.compte_service.service.CompteService;
 
+@Service
 public class CompteServiceImpl implements CompteService {
 	private final CompteRepository compteRepository;
 	private final CompteMapper compteMapper;
